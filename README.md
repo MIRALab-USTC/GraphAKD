@@ -3,7 +3,7 @@
 This is the code of paper 
 **Compressing Deep Graph Neural Networks via Adversarial Knowledge Distillation**. 
 Huarui He, Jie Wang, Zhanqiu Zhang, Feng Wu. SIGKDD 2022. 
-<!-- [[arXiv](https://arxiv.org/abs/2202.05679)] -->
+[[arXiv](https://arxiv.org/abs/2205.11678)]
 
 ## Requirements
 - python 3.7.3
@@ -12,7 +12,6 @@ Huarui He, Jie Wang, Zhanqiu Zhang, Feng Wu. SIGKDD 2022.
 - ogb 1.3.2
 - torch-geometric 2.0.2
 - gdown 4.4.0
-
 
 
 ## Reproduce the Results
@@ -59,17 +58,13 @@ GraphAKD
 ## Citation
 If you find this code useful, please consider citing the following paper.
 ```
-TBA
-```
-
-<!-- ```
-@inproceedings{WWW22_GCN4KGC,
- author = {Zhanqiu Zhang and Jie Wang and Jieping Ye and Feng Wu},
- booktitle = {The Web Conference 2022},
- title = {Rethinking Graph Convolutional Networks in Knowledge Graph Completion},
- year = {2022}
+@inproceedings{KDD22_GraphAKD,
+  author={Huarui He and Jie Wang and Zhanqiu Zhang and Feng Wu},
+  booktitle={Proc. of SIGKDD},
+  title={Compressing Deep Graph Neural Networks via Adversarial Knowledge Distillation},
+  year={2022}
 }
-``` -->
+```
 
 ## Acknowledgement
 We refer to the code of [DGL](https://github.com/dmlc/dgl). Thanks for their contributions.
