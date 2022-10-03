@@ -11,6 +11,8 @@ from gcn import GCN
 import random
 import os
 import dgl.function as fn
+import warnings
+warnings.filterwarnings('ignore')
 
 
 def set_random_seed(args):
@@ -117,12 +119,11 @@ def run(args, g, n_classes, cuda, n_running):
 
     # load teacher knowledge
     if args.role == 'stu':
-        kd_dir = '../../distilled'
-        kd_path = os.path.join(kd_dir, args.dataset + f'-knowledge.pth.tar')
+        kd_path = os.path.join(args.kd_dir, args.dataset + f'-knowledge.pth.tar')
         assert os.path.isfile(kd_path), "Please download teacher knowledge first"
         knowledge = torch.load(kd_path, map_location=g.device)
         tea_logits = knowledge['logits']
-        tea_emb = knowledge['embedding']  # torch.Size([2708, 64])
+        tea_emb = knowledge['embedding']
         if 'perm' in knowledge.keys() and args.dataset in ['arxiv', 'reddit']:
             perm = knowledge['perm']
             inv_perm = perm.sort()[1]
@@ -191,12 +192,14 @@ def run(args, g, n_classes, cuda, n_running):
                 loss_D = 0.5 * (ad_loss + ds_loss)
 
                 # distinguish by De
+                Discriminator_e.train()
                 pos_e = Discriminator_e(tea_emb, g)
                 neg_e = Discriminator_e(model.emb.detach(), g)
                 real_e = torch.sigmoid(pos_e)
                 fake_e = torch.sigmoid(neg_e)
                 ad_eloss = loss_dis(real_e, torch.ones_like(real_e)) + loss_dis(fake_e, torch.zeros_like(fake_e))
-                #++++++++++++++++++++++++
+                # distinguish by Dg
+                Discriminator_g.train()
                 tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
                 pos_g = Discriminator_g(tea_emb, tea_sum)
                 neg_g = Discriminator_g(model.emb.detach(), tea_sum)
@@ -211,7 +214,6 @@ def run(args, g, n_classes, cuda, n_running):
                 fake_g = torch.sigmoid(neg_g)
                 ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
                 loss_D = loss_D + ad_eloss + ad_gloss1 + ad_gloss2
-                #++++++++++++++++++++++++
 
                 opt_D.zero_grad()
                 loss_D.backward()
@@ -237,7 +239,8 @@ def run(args, g, n_classes, cuda, n_running):
                 neg_e = Discriminator_e(model.emb, g)
                 fake_e = torch.sigmoid(neg_e)
                 ad_eloss = loss_dis(fake_e, torch.ones_like(fake_e))
-                #++++++++++++++++++++++++
+                ## to fool Discriminator_g
+                Discriminator_g.eval()
                 tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
                 neg_g = Discriminator_g(model.emb, tea_sum)
                 fake_g = torch.sigmoid(neg_g)
@@ -248,8 +251,7 @@ def run(args, g, n_classes, cuda, n_running):
                 pos_g = Discriminator_g(model.emb, stu_sum)
                 real_g = torch.sigmoid(pos_g)
                 fake_g = torch.sigmoid(neg_g)
-                ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
-                #++++++++++++++++++++++++
+                ad_gloss2 = loss_dis(real_g, torch.zeros_like(real_g)) + loss_dis(fake_g, torch.ones_like(fake_g))
                 loss_G = loss_G + ad_eloss + ad_gloss1 + ad_gloss2
 
                 optimizer.zero_grad()
@@ -283,7 +285,7 @@ def run(args, g, n_classes, cuda, n_running):
     print(f"Param count: {param_count}")
     print(f"Test accuracy on {args.dataset}: {final_test_acc:.2%}\n")
     return best_eval_acc, final_test_acc
-#++++++++++++++++++++++++
+
 
 def main(args):
     # load and preprocess dataset
@@ -296,10 +298,7 @@ def main(args):
     elif args.dataset == 'flickr':
         from torch_geometric.datasets import Flickr
         import torch_geometric.transforms as T
-        # TODO: hardcode data dir
-        # root = '../../../../../datasets'
-        root = '../../datasets'
-        pyg_data = Flickr(root=f'{root}/Flickr', pre_transform=T.ToSparseTensor())[0]  # replace edge_index with adj
+        pyg_data = Flickr(root=f'{args.data_dir}/Flickr', pre_transform=T.ToSparseTensor())[0]  # replace edge_index with adj
         adj = pyg_data.adj_t.to_torch_sparse_coo_tensor()
         u, v = adj.coalesce().indices()
         g = dgl.graph((u, v))
@@ -313,10 +312,7 @@ def main(args):
     elif args.dataset == 'reddit':
         from torch_geometric.datasets import Reddit2
         import torch_geometric.transforms as T
-        # TODO: hardcode data dir
-        # root = '../../../../../datasets'
-        root = '../../datasets'
-        pyg_data = Reddit2(f'{root}/Reddit2', pre_transform=T.ToSparseTensor())[0]
+        pyg_data = Reddit2(f'{args.data_dir}/Reddit2', pre_transform=T.ToSparseTensor())[0]
         pyg_data.x = (pyg_data.x - pyg_data.x.mean(dim=0)) / pyg_data.x.std(dim=0)
         adj = pyg_data.adj_t.to_torch_sparse_coo_tensor()
         u, v = adj.coalesce().indices()
@@ -352,11 +348,9 @@ def main(args):
         norm = norm.cuda()
     g.ndata['norm'] = norm.unsqueeze(1)
 
-    #++++++++++++++++++++++++
     # run
     val_accs = []
     test_accs = []
-
     for i in range(args.n_runs):
         val_acc, test_acc = run(args, g, n_classes, cuda, i)
         val_accs.append(val_acc)
@@ -368,33 +362,23 @@ def main(args):
     print("Test Accs:", test_accs)
     print(f"Average val accuracy: {np.mean(val_accs)} ± {np.std(val_accs)}")
     print(f"Average test accuracy on {args.dataset}: {np.mean(test_accs)} ± {np.std(test_accs)}")
-    #++++++++++++++++++++++++
     
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GCN')
-    parser.add_argument("--dataset", type=str, default="cora",
-                        help="Dataset name ('cora', 'citeseer', 'pubmed').")
-    parser.add_argument("--dropout", type=float, default=0.5,
-                        help="dropout probability")
-    parser.add_argument("-g", "--gpu", type=int, default=0,
-                        help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-2,
-                        help="learning rate")
-    parser.add_argument("--n-epochs", type=int, default=600,
-                        help="number of training epochs")
-    parser.add_argument("--n-hidden", type=int, default=256,
-                        help="number of hidden gcn units")
-    parser.add_argument("--n-layers", type=int, default=1,
-                        help="number of hidden gcn layers")
-    parser.add_argument("--weight-decay", type=float, default=5e-4,
-                        help="Weight for L2 loss")
-    parser.add_argument("--self-loop", action='store_true',
-                        help="graph self-loop (default=False)")
-    parser.add_argument("--seed", type=int, default=2022,
-                        help="random seed")
-    parser.add_argument("--role", type=str, default="vani", 
-                        choices=['stu', 'vani'])
+    parser.add_argument("--dataset", type=str, default="cora", help="Dataset name ('cora', 'citeseer', 'pubmed').")
+    parser.add_argument("--dropout", type=float, default=0.5, help="dropout probability")
+    parser.add_argument("-g", "--gpu", type=int, default=0, help="gpu")
+    parser.add_argument("--lr", type=float, default=1e-2, help="learning rate")
+    parser.add_argument("--n-epochs", type=int, default=600, help="number of training epochs")
+    parser.add_argument("--n-hidden", type=int, default=256, help="number of hidden gcn units")
+    parser.add_argument("--n-layers", type=int, default=1, help="number of hidden gcn layers")
+    parser.add_argument("--weight-decay", type=float, default=5e-4, help="Weight for L2 loss")
+    parser.add_argument("--self-loop", action='store_true', help="graph self-loop (default=False)")
+    parser.add_argument("--seed", type=int, default=2022, help="random seed")
+    parser.add_argument("--role", type=str, default="vani", choices=['stu', 'vani'])
+    parser.add_argument("--data_dir", type=str, default='../../datasets')
+    parser.add_argument("--kd_dir", type=str, default='../../distilled')
     parser.set_defaults(self_loop=True)
 
     parser.add_argument("--d-critic", type=int, default=1, help="train discriminator")
@@ -408,11 +392,11 @@ if __name__ == '__main__':
 
 
 """
-PubMed
+CiteSeer
 
 Runned 10 times
-Val Accs: [0.846, 0.844, 0.842, 0.842, 0.846, 0.842, 0.84, 0.846, 0.84, 0.846]
-Test Accs: [0.807, 0.812, 0.82, 0.809, 0.818, 0.813, 0.816, 0.813, 0.813, 0.813]
-Average val accuracy: 0.8433999999999999 ± 0.0023748684174075855
-Average test accuracy on pubmed: 0.8134 ± 0.003666060555964638
+Val Accs: [0.726, 0.72, 0.714, 0.702, 0.742, 0.724, 0.72, 0.714, 0.734, 0.712]
+Test Accs: [0.727, 0.718, 0.723, 0.723, 0.73, 0.744, 0.737, 0.731, 0.733, 0.729]
+Average val accuracy: 0.7208 ± 0.01088852607105297
+Average test accuracy on citeseer: 0.7295 ± 0.007102816342831912
 """

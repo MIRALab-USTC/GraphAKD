@@ -66,8 +66,8 @@ def load_knowledge(kd_path, device): # load teacher knowledge
     assert os.path.isfile(kd_path), "Please download teacher knowledge first"
     knowledge = torch.load(kd_path, map_location=device)
     tea_logits = knowledge['logits'].float()
-    tea_h = knowledge['h-embedding']  # torch.Size([830936, 256])
-    tea_g = knowledge['g-embedding']  # torch.Size([32901, 256])
+    tea_h = knowledge['h-embedding']
+    tea_g = knowledge['g-embedding']
     new_ptr = knowledge['ptr']
     return tea_logits, tea_h, tea_g, new_ptr
 
@@ -120,12 +120,16 @@ def train(model, device, loader, optimizer, task_type, others):
                     loss_D = 0.5 * (ad_loss + ds_loss)
 
                     # distinguish by De
+                    Discriminator_e.train()
                     pos_e = Discriminator_e(tea_bh, batch)
                     neg_e = Discriminator_e(stu_bh.detach(), batch)
                     real_e = torch.sigmoid(pos_e)
                     fake_e = torch.sigmoid(neg_e)
                     ad_eloss = loss_dis(real_e, torch.ones_like(real_e)) + loss_dis(fake_e, torch.zeros_like(fake_e))
                     #++++++++++++++++++++++++
+                    # distinguish by Dg
+                    Discriminator_g.train()
+                    Discriminator_g.train()
                     tea_bg = torch.sigmoid(tea_bg)
                     pos_g = Discriminator_g(tea_bh, tea_bg, batch)
                     neg_g = Discriminator_g(stu_bh.detach(), tea_bg, batch)
@@ -166,6 +170,8 @@ def train(model, device, loader, optimizer, task_type, others):
                     fake_e = torch.sigmoid(neg_e)
                     ad_eloss = loss_dis(fake_e, torch.ones_like(fake_e))
                     #++++++++++++++++++++++++Start
+                    ## to fool Discriminator_g
+                    Discriminator_g.eval()
                     tea_bg = torch.sigmoid(tea_bg)
                     neg_g = Discriminator_g(stu_bh, tea_bg, batch)
                     fake_g = torch.sigmoid(neg_g)
@@ -176,7 +182,8 @@ def train(model, device, loader, optimizer, task_type, others):
                     pos_g = Discriminator_g(stu_bh, stu_bg, batch)
                     real_g = torch.sigmoid(pos_g)
                     fake_g = torch.sigmoid(neg_g)
-                    ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
+                    # ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
+                    ad_gloss2 = loss_dis(real_g, torch.zeros_like(real_g)) + loss_dis(fake_g, torch.ones_like(fake_g))
                     #++++++++++++++++++++++++
                     loss_G = loss_G + ad_eloss + ad_gloss1 + ad_gloss2
 
@@ -240,44 +247,32 @@ def eval(model, device, loader, evaluator, distill=False):
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='GNN baselines on ogbgmol* data with Pytorch Geometrics')
-    parser.add_argument('--device', type=int, default=0,
-                        help='which gpu to use if any (default: 0)')
-    parser.add_argument('--gnn', type=str, default='gin-virtual',
-                        help='GNN gin, gin-virtual, or gcn, or gcn-virtual (default: gin-virtual)')
-    parser.add_argument('--drop_ratio', type=float, default=0.5,
-                        help='dropout ratio (default: 0.5)')
-    parser.add_argument('--num_layer', type=int, default=5,
-                        help='number of GNN message passing layers (default: 5)')
-    parser.add_argument('--emb_dim', type=int, default=48, 
-                        help='dimensionality of hidden units in GNNs (default: 300)')
-    parser.add_argument('--batch_size', type=int, default=32,
-                        help='input batch size for training (default: 32)')
-    parser.add_argument('--epochs', type=int, default=100,
-                        help='number of epochs to train (default: 100)')
-    parser.add_argument('--num_workers', type=int, default=0,
-                        help='number of workers (default: 0)')
-    parser.add_argument('--dataset', type=str, default="ogbg-molhiv",
-                        help='dataset name (default: ogbg-molhiv)')
-    parser.add_argument('--feature', type=str, default="full",
-                        help='full feature or simple feature')
-    parser.add_argument('--filename', type=str, default="output",
-                        help='filename to output result (default: )')
+    parser.add_argument('--device', type=int, default=0, help='which gpu to use if any (default: 0)')
+    parser.add_argument('--gnn', type=str, default='gin-virtual', help='GNN gin, gin-virtual, or gcn, or gcn-virtual (default: gin-virtual)')
+    parser.add_argument('--drop_ratio', type=float, default=0.5, help='dropout ratio (default: 0.5)')
+    parser.add_argument('--num_layer', type=int, default=5, help='number of GNN message passing layers (default: 5)')
+    parser.add_argument('--emb_dim', type=int, default=48, help='dimensionality of hidden units in GNNs (default: 300)')
+    parser.add_argument('--batch_size', type=int, default=32, help='input batch size for training (default: 32)')
+    parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train (default: 100)')
+    parser.add_argument('--num_workers', type=int, default=0, help='number of workers (default: 0)')
+    parser.add_argument('--dataset', type=str, default="ogbg-molhiv", help='dataset name (default: ogbg-molhiv)')
+    parser.add_argument('--feature', type=str, default="full", help='full feature or simple feature')
+    parser.add_argument('--filename', type=str, default="output", help='filename to output result (default: )')
     parser.add_argument("--role", type=str, default="vani", choices=['stu', 'vani'])
+    parser.add_argument("--data_dir", type=str, default='../../datasets')
+    parser.add_argument("--kd_dir", type=str, default='../../distilled')
     parser.add_argument("--d-critic", type=int, default=1, help="critic iteration")
     parser.add_argument("--g-critic", type=int, default=1, help="critic iteration")
     parser.add_argument("--lr", type=float, default=5e-3, help="learning rate")
     parser.add_argument("--wd", type=float, default=1e-5, help="weight decay")
     parser.add_argument("--seed", type=int, default=2022, help="random seed")
-    parser.add_argument("--alpha", type=float, default=0., help="l2 loss weight")
     args = parser.parse_args()
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
 
     ### automatic dataloading and splitting
-    # TODO: hardcode data dir
-    root = '../../../../../datasets'
-    dataset = PygGraphPropPredDataset(name = args.dataset, root=f'{root}/OGB/')
+    dataset = PygGraphPropPredDataset(name = args.dataset, root=f'{args.data_dir}/OGB/')
 
     if args.feature == 'full':
         pass 
@@ -307,14 +302,12 @@ def main():
     else:
         raise ValueError('Invalid GNN type')
 
-    # optimizer = optim.Adam(model.parameters(), lr=0.001)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     #++++++++++++++++++++++++Load knowledge
     if args.role != 'vani':
         data_name=args.dataset.split('-')[1].upper()
-        kd_dir = '../../distilled'
-        kd_path = os.path.join(kd_dir, data_name + f'-knowledge.pth.tar')
+        kd_path = os.path.join(args.kd_dir, data_name + f'-knowledge.pth.tar')
         if args.dataset == 'ogbg-molpcba':
             tea_logits, tea_h, tea_g, new_ptr = load_knowledge(kd_path, device='cpu')
         elif args.dataset == 'ogbg-molhiv':
@@ -327,7 +320,6 @@ def main():
 
     Discriminator_e = local_emb_D(n_hidden=args.emb_dim).to(device)
     Discriminator_g = global_emb_D(n_hidden=args.emb_dim).to(device)
-    # Discriminator_l = logits_D(n_class=1, n_hidden=2).to(device)
     Discriminator_l = logits_D(n_class=dataset.num_tasks, n_hidden=dataset.num_tasks).to(device)
     opt_D = torch.optim.Adam([{"params": Discriminator_l.parameters()}, {"params": Discriminator_e.parameters()}, {"params": Discriminator_g.parameters()}], lr=1e-2, weight_decay=5e-4)
     loss_dis = torch.nn.BCELoss()
@@ -335,7 +327,6 @@ def main():
 
     valid_curve = []
     test_curve = []
-
     for epoch in range(1, args.epochs + 1):
         print("=====Epoch {}".format(epoch))
         print('Training...')

@@ -4,7 +4,7 @@ import torch
 import numpy as np
 # from partition_utils import *
 import dgl
-from dgl.transform import metis_partition
+from dgl import metis_partition
 from dgl import backend as F
 
 class ClusterIter(object):

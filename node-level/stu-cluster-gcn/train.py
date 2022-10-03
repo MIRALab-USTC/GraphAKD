@@ -17,7 +17,6 @@ import torch.nn as nn
 device = None
 in_feats, n_classes = None, None
 epsilon = 1 - math.log(2)
-# th.manual_seed(123)
 import torch
 import dgl
 
@@ -90,7 +89,6 @@ def gen_model(args):
 
 
 def cross_entropy(x, labels):
-
     if labels.dim() != 1 and labels.shape[1] != 1:  # for Yelp
         return nn.BCEWithLogitsLoss()(x, labels)
     y = F.cross_entropy(x, labels[:, 0], reduction="none")
@@ -175,12 +173,15 @@ def train(model, graph, labels, train_idx, optimizer, use_labels, *args):
             loss_D = 0.5 * (ad_loss + ds_loss)
 
             # distinguish by De
+            Discriminator_e.train()
             pos_e = Discriminator_e(tea_emb, graph)
             neg_e = Discriminator_e(model.emb.detach(), graph)
             real_e = torch.sigmoid(pos_e)
             fake_e = torch.sigmoid(neg_e)
             ad_eloss = loss_dis(real_e, torch.ones_like(real_e)) + loss_dis(fake_e, torch.zeros_like(fake_e))
             #++++++++++++++++++++++++
+            # distinguish by Dg
+            Discriminator_g.train()
             tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
             pos_g = Discriminator_g(tea_emb, tea_sum)
             neg_g = Discriminator_g(model.emb.detach(), tea_sum)
@@ -206,7 +207,7 @@ def train(model, graph, labels, train_idx, optimizer, use_labels, *args):
         #  Train Stu
         # ============================================
         if epoch % nargs.g_critic == 0:
-            ## distinguish by Dl
+            ## to fool Discriminator_l
             Discriminator_t.eval()
             pos_z = Discriminator_t(tea_logits)
             neg_z = Discriminator_t(pred)
@@ -217,11 +218,14 @@ def train(model, graph, labels, train_idx, optimizer, use_labels, *args):
             l1_loss = torch.norm(pred - tea_logits, p=1) * 1. / len(tea_logits)
             loss_G = label_loss + 0.5 * (ds_loss + ad_loss) + l1_loss
 
-            # distinguish by De
+            ## to fool Discriminator_e
+            Discriminator_e.eval()
             neg_e = Discriminator_e(model.emb, graph)
             fake_e = torch.sigmoid(neg_e)
             ad_eloss = loss_dis(fake_e, torch.ones_like(fake_e))
             #++++++++++++++++++++++++
+            ## to fool Discriminator_g
+            Discriminator_g.eval()
             tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
             neg_g = Discriminator_g(model.emb, tea_sum)
             fake_g = torch.sigmoid(neg_g)
@@ -232,7 +236,8 @@ def train(model, graph, labels, train_idx, optimizer, use_labels, *args):
             pos_g = Discriminator_g(model.emb, stu_sum)
             real_g = torch.sigmoid(pos_g)
             fake_g = torch.sigmoid(neg_g)
-            ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
+            # ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
+            ad_gloss2 = loss_dis(real_g, torch.zeros_like(real_g)) + loss_dis(fake_g, torch.ones_like(fake_g))
             loss_G = loss_G + ad_eloss + ad_gloss1 + ad_gloss2
             #++++++++++++++++++++++++
 
@@ -278,41 +283,41 @@ def cluster_train(model, cluster, feat, labels, mask, optimizer, args, *others):
         if epoch % args.d_critic == 0:
             loss_D = 0
             ## distinguish by Dl
-            if not args.de_only:
-                Discriminator_t.train()
-                stu_logits = pred.detach()
-                pos_z = Discriminator_t(tea_logits)
-                neg_z = Discriminator_t(stu_logits)
-                real_z = torch.sigmoid(pos_z[:, -1])
-                fake_z = torch.sigmoid(neg_z[:, -1])
-                ad_loss = loss_dis(real_z, torch.ones_like(real_z)) + loss_dis(fake_z, torch.zeros_like(fake_z))
-                ds_loss = cross_entropy(pos_z[:, :-1][train_pred_idx], labels[train_pred_idx]) \
-                        + cross_entropy(neg_z[:, :-1][train_pred_idx], labels[train_pred_idx])
-                loss_D = 0.5 * (ad_loss + ds_loss)
+            Discriminator_t.train()
+            stu_logits = pred.detach()
+            pos_z = Discriminator_t(tea_logits)
+            neg_z = Discriminator_t(stu_logits)
+            real_z = torch.sigmoid(pos_z[:, -1])
+            fake_z = torch.sigmoid(neg_z[:, -1])
+            ad_loss = loss_dis(real_z, torch.ones_like(real_z)) + loss_dis(fake_z, torch.zeros_like(fake_z))
+            ds_loss = cross_entropy(pos_z[:, :-1][train_pred_idx], labels[train_pred_idx]) \
+                    + cross_entropy(neg_z[:, :-1][train_pred_idx], labels[train_pred_idx])
+            loss_D = 0.5 * (ad_loss + ds_loss)
             ## distinguish by De
-            if not args.dl_only:
-                Discriminator_e.train()
-                pos_e = Discriminator_e(tea_emb, graph)
-                neg_e = Discriminator_e(model.emb.detach(), graph)
-                real_e = torch.sigmoid(pos_e)
-                fake_e = torch.sigmoid(neg_e)
-                ad_eloss = loss_dis(real_e, torch.ones_like(real_e)) + loss_dis(fake_e, torch.zeros_like(fake_e))
-                #++++++++++++++++++++++++
-                tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
-                pos_g = Discriminator_g(tea_emb, tea_sum)
-                neg_g = Discriminator_g(model.emb.detach(), tea_sum)
-                real_g = torch.sigmoid(pos_g)
-                fake_g = torch.sigmoid(neg_g)
-                ad_gloss1 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
+            Discriminator_e.train()
+            pos_e = Discriminator_e(tea_emb, graph)
+            neg_e = Discriminator_e(model.emb.detach(), graph)
+            real_e = torch.sigmoid(pos_e)
+            fake_e = torch.sigmoid(neg_e)
+            ad_eloss = loss_dis(real_e, torch.ones_like(real_e)) + loss_dis(fake_e, torch.zeros_like(fake_e))
+            #++++++++++++++++++++++++
+            # distinguish by Dg
+            Discriminator_g.train()
+            tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
+            pos_g = Discriminator_g(tea_emb, tea_sum)
+            neg_g = Discriminator_g(model.emb.detach(), tea_sum)
+            real_g = torch.sigmoid(pos_g)
+            fake_g = torch.sigmoid(neg_g)
+            ad_gloss1 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
 
-                stu_sum = torch.sigmoid(model.emb.detach().mean(dim=0)).unsqueeze(-1)
-                neg_g = Discriminator_g(tea_emb, stu_sum)
-                pos_g = Discriminator_g(model.emb.detach(), stu_sum)
-                real_g = torch.sigmoid(pos_g)
-                fake_g = torch.sigmoid(neg_g)
-                ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
-                loss_D = loss_D + ad_eloss + ad_gloss1 + ad_gloss2
-                #++++++++++++++++++++++++
+            stu_sum = torch.sigmoid(model.emb.detach().mean(dim=0)).unsqueeze(-1)
+            neg_g = Discriminator_g(tea_emb, stu_sum)
+            pos_g = Discriminator_g(model.emb.detach(), stu_sum)
+            real_g = torch.sigmoid(pos_g)
+            fake_g = torch.sigmoid(neg_g)
+            ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
+            loss_D = loss_D + ad_eloss + ad_gloss1 + ad_gloss2
+            #++++++++++++++++++++++++
 
             opt_D.zero_grad()
             loss_D.backward()
@@ -324,35 +329,36 @@ def cluster_train(model, cluster, feat, labels, mask, optimizer, args, *others):
         if epoch % args.g_critic == 0:
             loss_G = label_loss
             ## to fool Discriminator_t
-            if not args.de_only:
-                Discriminator_t.eval()
-                neg_z = Discriminator_t(pred)
-                fake_z = torch.sigmoid(neg_z[:, -1])
-                ad_loss = loss_dis(fake_z, torch.ones_like(fake_z))
-                ds_loss = cross_entropy(neg_z[:, :-1][train_pred_idx], labels[train_pred_idx])
-                l1_loss = torch.norm(pred - tea_logits, p=1) * 1. / len(tea_logits)
-                loss_G = loss_G + 0.5 * (ds_loss + ad_loss) + l1_loss
+            Discriminator_t.eval()
+            neg_z = Discriminator_t(pred)
+            fake_z = torch.sigmoid(neg_z[:, -1])
+            ad_loss = loss_dis(fake_z, torch.ones_like(fake_z))
+            ds_loss = cross_entropy(neg_z[:, :-1][train_pred_idx], labels[train_pred_idx])
+            l1_loss = torch.norm(pred - tea_logits, p=1) * 1. / len(tea_logits)
+            loss_G = loss_G + 0.5 * (ds_loss + ad_loss) + l1_loss
             
             ## to fool Discriminator_e
-            if not args.dl_only:
-                Discriminator_e.eval()
-                neg_e = Discriminator_e(model.emb, graph)
-                fake_e = torch.sigmoid(neg_e)
-                ad_eloss = loss_dis(fake_e, torch.ones_like(fake_e))
-                #++++++++++++++++++++++++
-                tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
-                neg_g = Discriminator_g(model.emb, tea_sum)
-                fake_g = torch.sigmoid(neg_g)
-                ad_gloss1 = loss_dis(fake_g, torch.ones_like(fake_g))
+            Discriminator_e.eval()
+            neg_e = Discriminator_e(model.emb, graph)
+            fake_e = torch.sigmoid(neg_e)
+            ad_eloss = loss_dis(fake_e, torch.ones_like(fake_e))
+            #++++++++++++++++++++++++
+            ## to fool Discriminator_g
+            Discriminator_g.eval()
+            tea_sum = torch.sigmoid(tea_emb.mean(dim=0)).unsqueeze(-1)
+            neg_g = Discriminator_g(model.emb, tea_sum)
+            fake_g = torch.sigmoid(neg_g)
+            ad_gloss1 = loss_dis(fake_g, torch.ones_like(fake_g))
 
-                stu_sum = torch.sigmoid(model.emb.mean(dim=0)).unsqueeze(-1)
-                neg_g = Discriminator_g(tea_emb, stu_sum)
-                pos_g = Discriminator_g(model.emb, stu_sum)
-                real_g = torch.sigmoid(pos_g)
-                fake_g = torch.sigmoid(neg_g)
-                ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
-                loss_G = loss_G + ad_eloss + ad_gloss1 + ad_gloss2
-                #++++++++++++++++++++++++
+            stu_sum = torch.sigmoid(model.emb.mean(dim=0)).unsqueeze(-1)
+            neg_g = Discriminator_g(tea_emb, stu_sum)
+            pos_g = Discriminator_g(model.emb, stu_sum)
+            real_g = torch.sigmoid(pos_g)
+            fake_g = torch.sigmoid(neg_g)
+            # ad_gloss2 = loss_dis(real_g, torch.ones_like(real_g)) + loss_dis(fake_g, torch.zeros_like(fake_g))
+            ad_gloss2 = loss_dis(real_g, torch.zeros_like(real_g)) + loss_dis(fake_g, torch.ones_like(fake_g))
+            loss_G = loss_G + ad_eloss + ad_gloss1 + ad_gloss2
+            #++++++++++++++++++++++++
 
             # optimizer.zero_grad()
             loss_G.backward()
@@ -444,13 +450,12 @@ def run(args, graph, labels, train_idx, val_idx, test_idx, evaluator, n_running)
 
     # Get teacher knowledge
     import os
-    kd_dir = '../../distilled'
     if args.dataset == 'ogbn-arxiv':
-        kd_path = os.path.join(kd_dir, f'arxiv-knowledge.pth.tar')  # 73.14774808139415
+        kd_path = os.path.join(args.kd_dir, f'arxiv-knowledge.pth.tar')
     elif args.dataset == 'ogbn-products':
-        kd_path = os.path.join(kd_dir, f'products-knowledge.pth.tar')
+        kd_path = os.path.join(args.kd_dir, f'products-knowledge.pth.tar')
     elif args.dataset == 'yelp':
-        kd_path = os.path.join(kd_dir, f'yelp-knowledge.pth.tar')
+        kd_path = os.path.join(args.kd_dir, f'yelp-knowledge.pth.tar')
     assert os.path.isfile(kd_path), "Please download teacher knowledge first"
     knowledge = th.load(kd_path, map_location=device)
     tea_logits = knowledge['logits']
@@ -622,6 +627,8 @@ def main():
     argparser.add_argument("--d-critic", type=int, default=1, help="train discriminator")
     argparser.add_argument("--g-critic", type=int, default=1, help="train generator")
     argparser.add_argument("--role", type=str, default="vani", choices=['stu', 'vani'])
+    argparser.add_argument("--kd_dir", type=str, default='../../distilled')
+    argparser.add_argument("--data_dir", type=str, default='../../datasets')
 
     args = argparser.parse_args()
     print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
@@ -634,27 +641,21 @@ def main():
 
     # load data
     if args.dataset == 'yelp':
-        from torch_geometric.datasets import Yelp
-        import torch_geometric.transforms as T
-        root = '../../datasets'
-        pyg_data = Yelp(f'{root}/YELP', pre_transform=T.ToSparseTensor())[0]  # replace edge_index with adj
-        labels = pyg_data.y
-        adj = pyg_data.adj_t.to_torch_sparse_coo_tensor()
-        u, v = adj.coalesce().indices()
-        g = dgl.graph((u, v))
-        g.ndata['feat'] = pyg_data.x
-        idx = torch.arange(g.num_nodes())
-        train_idx, val_idx, test_idx = idx[pyg_data.train_mask], idx[pyg_data.val_mask], idx[pyg_data.test_mask]
-        n_classes = labels.size(1)  # multi-label classification
-        graph = g
+        from dgl.data import YelpDataset
+        data = YelpDataset()
+        graph = data[0]
+        n_classes = data.num_classes # # multi-label classification 100
+        labels = graph.ndata['label'].float()
+        idx = torch.arange(graph.num_nodes())
+        train_idx, val_idx, test_idx = idx[graph.ndata['train_mask'].bool()], idx[graph.ndata['val_mask'].bool()], idx[graph.ndata['test_mask'].bool()]
         evaluator = None
     else:  # arxiv or products
-        root = '../../datasets'
-        data = DglNodePropPredDataset(name=args.dataset, root=f'{root}/OGB/')
+        data = DglNodePropPredDataset(name=args.dataset, root=f'{args.data_dir}/OGB/')
         evaluator = Evaluator(name=args.dataset)
         splitted_idx = data.get_idx_split()
         train_idx, val_idx, test_idx = splitted_idx["train"], splitted_idx["valid"], splitted_idx["test"]
         graph, labels = data[0]
+        n_classes = (labels.max() + 1).item()
 
     # add reverse edges
     srcs, dsts = graph.all_edges()
@@ -667,10 +668,6 @@ def main():
     print(f"Total edges after adding self-loop {graph.number_of_edges()}")
 
     in_feats = graph.ndata["feat"].shape[1]
-    n_classes = (labels.max() + 1).item()
-    if args.dataset == 'yelp':
-        n_classes = labels.size(1)  # multi-label classification
-
     train_idx = train_idx.to(device)
     val_idx = val_idx.to(device)
     test_idx = test_idx.to(device)
@@ -679,7 +676,6 @@ def main():
     # run
     val_accs = []
     test_accs = []
-
     for i in range(args.n_runs):
         th.manual_seed(args.seed)
         val_acc, test_acc = run(args, graph, labels, train_idx, val_idx, test_idx, evaluator, i)

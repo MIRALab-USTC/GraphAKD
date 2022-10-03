@@ -1,5 +1,11 @@
 # Student GNNs for ogbg-mol*
-
+Before downloading datasets, please add the following code at Line 135 of `ogb.graphproppred.PygGraphPropPredDataset`
+```python
+#++++++++++++++++++++++++ add mol index
+for i, g in enumerate(data_list):
+    g.id = torch.tensor([i])
+#++++++++++++++++++++++++
+```
 
 ## ogbg-molhiv
 

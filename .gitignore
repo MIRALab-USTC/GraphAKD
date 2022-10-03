@@ -8,7 +8,9 @@ results/*
 data/*
 preprocessed/*
 */dataset
+dataset
 */temp
+tune.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
