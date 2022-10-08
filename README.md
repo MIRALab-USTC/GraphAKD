@@ -8,11 +8,13 @@ Huarui He, Jie Wang, Zhanqiu Zhang, Feng Wu. SIGKDD 2022.
 ## Requirements
 - python 3.7.3
 - torch 1.9.1
-- dgl 0.6
-- ogb 1.3.2
-- torch-geometric 2.0.2
-- gdown 4.4.0
-
+- dgl 0.9.1
+- ogb 1.3.4
+- torch-geometric 2.1.0
+- gdown 4.5.1
+<!-- dgl-cu113                 0.9.1  -->
+<!-- torch                     1.9.1+cu111 -->
+<!-- https://github.com/snap-stanford/ogb/issues/346   A quick workaround is to uninstall outdated after ogb is installed. -->
 
 ## Reproduce the Results
 First, download teacher knowledge from Google Drive
