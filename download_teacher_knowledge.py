@@ -14,8 +14,8 @@ urls_fns_dict = {
     "products": [("https://drive.google.com/u/0/uc?id=1P_lPCJ8l1J8B4EpBTmJ6MyrHQXezuBXZ&export=download", "products-knowledge.pth.tar")],
     "MOLHIV": [("https://drive.google.com/u/0/uc?id=1e5AEVVdqj1boq8AP1WHv5CtPjvdYMkIi&export=download", "MOLHIV-knowledge.pth.tar")],
 }
-# as the teacher knowledge on ogbg-molpcba is pretty large, we share the file download link in the form of Aliyun Drive link.
-# you can download「distilled.exe」 from https://www.aliyundrive.com/s/eBDyWr9qV1S and open it using WinRAR.
+# as the teacher knowledge on ogbg-molpcba is pretty large, we share the file download link in the form of TianYi Drive link.
+# you can download「GraphAKD_teachers」 from https://cloud.189.cn/web/share?code=aA3YZf6F3iqa（访问码：k2lo）.
 
 
 def parse_args():
